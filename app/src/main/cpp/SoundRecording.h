@@ -20,6 +20,8 @@
 #include "logging_macros.h"
 #include "Utils.h"
 
+enum Revert {revertBackOn, revertBackOff};
+static Revert RT;
 
 constexpr int kMaxSamples = 480000; // 10s of audio data @ 48kHz
 

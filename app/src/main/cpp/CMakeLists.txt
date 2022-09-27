@@ -24,6 +24,7 @@ add_library( # Sets the name of the library.
         SoundRecording.cpp
         RecordingCallback.cpp
         PlayingCallback.cpp
+        recordingAndSaving.cpp
         native-lib.cpp)
 
 # Searches for a specified prebuilt library and stores the path as a

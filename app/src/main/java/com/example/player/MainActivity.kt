@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.SystemClock
 import android.util.Log
 import android.widget.Button
@@ -13,6 +14,9 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import com.example.player.databinding.ActivityMainBinding
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.*
 
 var timeCount : String = ""
 val TAG = MainActivity::class.java.simpleName
@@ -21,12 +25,17 @@ class MainActivity : AppCompatActivity() {
 
     private val AUDIO_RECORD_REQUEST = 12446
     private val PERMISSIONS = arrayOf(
+
         Manifest.permission.RECORD_AUDIO,
         Manifest.permission.READ_EXTERNAL_STORAGE,
         Manifest.permission.WRITE_EXTERNAL_STORAGE
     )
 
+    private val TAG = MainActivity::class.java.name
+    private var isPlaying = false
     private lateinit var binding: ActivityMainBinding
+    var fullPathToFile = ""
+
     override fun onCreate(savedInstanceState: Bundle?) {
 
         Log.d("Currunt: ", "onCreate: ")
@@ -43,11 +52,14 @@ class MainActivity : AppCompatActivity() {
         }
 
         create()
-        initUI()
-        // Example of a call to a native method
-//        val str = stringFromJNI()
-//        Log.i("Return String JNI",str)
+//        initUI()
+        initUI_revertBack()
+//        init_RecAndsaveInFile()
+
     }
+
+
+
     /**
      * A native method that is implemented by the 'player' native library,
      * which is packaged with this application.
@@ -58,7 +70,12 @@ class MainActivity : AppCompatActivity() {
     external fun create(): Boolean
     external fun startRecording()
     external fun stopRecording()
+    external fun revertBackPlay(): Boolean
+    external fun stopRevertBack():Boolean
     external fun startPlayingRecordedStream()
+
+    external fun recAndSaveInFile(path : String): Boolean
+    external fun stopRec():Boolean
 
     companion object {
 
@@ -67,6 +84,10 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Used for creating audio and then playing that
+     *
+     */
     private fun initUI() {
 
         Log.d("Kotlin : MainActivity:", "initUI: ")
@@ -93,6 +114,48 @@ class MainActivity : AppCompatActivity() {
             startBackTimer()
             startPlayingRecordedStream()
         }
+    }
+
+    /**
+     * Used for revertBack audio
+     *
+     */
+    private fun initUI_revertBack(){
+        getSupportActionBar()?.setTitle("Revert Back Player")
+
+        val btn_startRecording = findViewById<Button>(R.id.btn_startRec)
+        btn_startRecording.setOnClickListener(){
+            Toast.makeText(this, "Starting : Revert Back ", Toast.LENGTH_SHORT).show()
+            timeCount = startTimer()
+            startRevertBack()
+
+           // Toast.makeText(this, "Recording & Player Started", Toast.LENGTH_SHORT).show()
+        }
+
+        val btn_stopRecording = findViewById<Button>(R.id.btn_stopRec)
+        btn_stopRecording.setOnClickListener(){
+
+            stopTimer()
+            Thread(Runnable { stopRevertBack() }).start()
+            Toast.makeText(this, "Recording Stopped", Toast.LENGTH_SHORT).show()
+        }
+
+    }
+
+    private fun startRevertBack() {
+        Log.d(TAG, "Attempting to start")
+
+        var success: Boolean = false
+        //start revert back and get return value using thread
+        Thread(Runnable { success = revertBackPlay() }).start()
+        if (success) {
+            Toast.makeText(this, "Recording Started", Toast.LENGTH_SHORT).show()
+            isPlaying = true
+        } else {
+            Toast.makeText(this, "Recording Start Failed ", Toast.LENGTH_SHORT).show()
+            isPlaying = false
+        }
+
     }
 
     private fun stopTimer() : String {
@@ -177,5 +240,67 @@ class MainActivity : AppCompatActivity() {
 
         return false
     }
+
+    /**
+     * Used for savingToFile Input Data audio
+     *
+     */
+    private fun init_RecAndsaveInFile() {
+        Log.d(TAG," init_RecAndsaveInFile()")
+
+        val dirPath : String = createDir()
+        val timeStamp: String = SimpleDateFormat("yyyyMMdd_HHmmss", Locale("fr")).format(Date())
+        // Full path
+        fullPathToFile = Environment.getExternalStorageDirectory().path.toString() + "/Recordings/${timeStamp}_record.wav"
+        Log.d(TAG,fullPathToFile)
+
+        val btn_startRecording = findViewById<Button>(R.id.btn_startRec)
+        btn_startRecording.setOnClickListener() {
+
+            startRec(fullPathToFile)
+        }
+
+        val btn_stopRecording = findViewById<Button>(R.id.btn_stopRec)
+        btn_stopRecording.setOnClickListener() {
+
+            Thread(Runnable { stopRec() }).start()
+        }
+
+    }
+
+    private fun startRec(pathToFile: String) {
+
+        if(!isRecordPermissionGranted()){
+            requestPermissions()
+        }
+        timeCount = startTimer()
+        Toast.makeText(this, "Recording Started", Toast.LENGTH_SHORT).show()
+
+        Thread(Runnable { recAndSaveInFile(pathToFile) }).start()
+
+    }
+
+    private fun createDir() : String {
+        // Check if the Recorders ("/storage/emulated/0/Recorders/") directory exists, and if not then create it
+        val folder = File(Environment.getExternalStorageDirectory().path.toString() + "/Recordings")
+        if (folder.exists()) {
+            if (folder.isDirectory) {
+                // print out the absolute path to folder
+                Log.d(TAG, "init_RecAndsaveInFile: " + folder.absolutePath)
+
+            } else {
+                // Create the Recorders directory
+                folder.mkdir()
+                Log.d(TAG, "init_RecAndsaveInFile: " + folder.absolutePath)
+            }
+        } else {
+            // Create the Recorders directory
+            folder.mkdir()
+            Log.d(TAG, "init_RecAndsaveInFile: " + folder.absolutePath)
+        }
+
+        return folder.absolutePath
+    }
+
 
 }
