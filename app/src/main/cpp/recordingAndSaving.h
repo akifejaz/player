@@ -10,6 +10,7 @@
 #include <oboe/Oboe.h>
 #include "logging_macros.h"
 #include <fstream>
+//int32_t requestedFrames ;
 
 namespace little_endian_io
 {
@@ -56,6 +57,16 @@ public:
     void StartAudioRecorder(const char *fullPathToFile, const int = 48000) ;
 
     size_t WriteHeader(const char *filePath, const int recordingFreq, std::ofstream &f);
+
+    void UdpStartAudioRecorder(const int recordingFreq,int16_t *mybuffer,JNIEnv *env,jobject thiz,jmethodID methodID);
+
+    void
+    StartAudioRecorder(const char *fullPathToFile, const int recordingFreq, JNIEnv *env,
+                       jobject obj,
+                       jmethodID methodID);
+
+    void
+    SaveToFile(const char *fullPathToFile);
 };
 
 typedef struct WAV_HEADER

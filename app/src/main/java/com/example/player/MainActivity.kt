@@ -2,24 +2,33 @@ package com.example.player
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.os.Build
-import android.os.Bundle
-import android.os.Environment
-import android.os.SystemClock
+import android.os.*
+import android.os.StrictMode.ThreadPolicy
 import android.util.Log
-import android.widget.Button
-import android.widget.Chronometer
+import android.widget.*
 import android.widget.Chronometer.OnChronometerTickListener
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
-import com.example.player.databinding.ActivityMainBinding
 import java.io.File
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.InetAddress
+import java.net.SocketTimeoutException
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.text.SimpleDateFormat
 import java.util.*
+import java.util.regex.Pattern
+
 
 var timeCount : String = ""
-val TAG = MainActivity::class.java.simpleName
+var shortDataFromJNI : ShortArray = ShortArray(3072)
+var ByteDataFromJNI : ByteArray = ByteArray(6144)
+var udpSend : Boolean = true
+var ip: InetAddress? = null
+var datagramSock : DatagramSocket? = null
+var ReadingDataIndex : Int = 0
+var PlayingDataIndex : Int = 0
 
 class MainActivity : AppCompatActivity() {
 
@@ -33,32 +42,61 @@ class MainActivity : AppCompatActivity() {
 
     private val TAG = MainActivity::class.java.name
     private var isPlaying = false
-    private lateinit var binding: ActivityMainBinding
     var fullPathToFile = ""
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
 
-        Log.d("Currunt: ", "onCreate: ")
+        Log.d(TAG, "onCreate: ")
 
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        var req : Boolean = false
-        //-----
         getSupportActionBar()?.setTitle("Recorder and Player")
+        //create object of class RingBuffer
+
 
         if(!isRecordPermissionGranted()){
             requestPermissions()
         }
-
         create()
+
+        /*
+        * This is simple recorder : Records First and then Plays that
+        */
 //        initUI()
-        initUI_revertBack()
+        /*
+        * This Records and Plays at the same time
+        */
+//        initUI_revertBack()
+
+        /*
+        * Records and saves in file .wav
+        */
 //        init_RecAndsaveInFile()
+
+        /*
+        * Revert Back app but sends data to other using udp protocol
+        */
+
+        initUi_PlayerOverUdpProtocol()
 
     }
 
+    //This is the function called from JNI Side : gets the audio data
+    fun getData(shortArr : ShortArray) {   // <=== We will call this
+        Log.d(TAG,"getData()")
 
+        //read buffer
+        val s = shortArr.size
+        Log.d(TAG, "[ $ReadingDataIndex ] Data Size : $s")
+        ReadingDataIndex += 1
+
+        //Warn: Uncoment below Line Logcat crash due to size fill
+        //Log.d(TAG, "shortArr.indices : " + Arrays.toString(shortArr) )
+
+        sendBroadcast(shortArr)
+    }
 
     /**
      * A native method that is implemented by the 'player' native library,
@@ -76,6 +114,11 @@ class MainActivity : AppCompatActivity() {
 
     external fun recAndSaveInFile(path : String): Boolean
     external fun stopRec():Boolean
+
+    //  by refrence
+    external fun udpStartRec(): Boolean
+    external fun udpStartPlaying(shortData : ShortArray): Boolean
+
 
     companion object {
 
@@ -106,9 +149,6 @@ class MainActivity : AppCompatActivity() {
 
             stopTimer()
             stopRecording()
-
-            //Toast.makeText(this, "Recording Sttoped", Toast.LENGTH_SHORT).show()
-
             //playing at same time
             Toast.makeText(this, "Playing Recording: Record Stream ", Toast.LENGTH_SHORT).show()
             startBackTimer()
@@ -121,11 +161,13 @@ class MainActivity : AppCompatActivity() {
      *
      */
     private fun initUI_revertBack(){
+
         getSupportActionBar()?.setTitle("Revert Back Player")
 
         val btn_startRecording = findViewById<Button>(R.id.btn_startRec)
         btn_startRecording.setOnClickListener(){
             Toast.makeText(this, "Starting : Revert Back ", Toast.LENGTH_SHORT).show()
+
             timeCount = startTimer()
             startRevertBack()
 
@@ -263,9 +305,14 @@ class MainActivity : AppCompatActivity() {
         val btn_stopRecording = findViewById<Button>(R.id.btn_stopRec)
         btn_stopRecording.setOnClickListener() {
 
-            Thread(Runnable { stopRec() }).start()
+            stoprecording()
         }
 
+    }
+
+    private fun stoprecording(){
+
+        Thread(Runnable { stopRec()  }).start()
     }
 
     private fun startRec(pathToFile: String) {
@@ -280,6 +327,7 @@ class MainActivity : AppCompatActivity() {
 
     }
 
+    //returns the path to file ..
     private fun createDir() : String {
         // Check if the Recorders ("/storage/emulated/0/Recorders/") directory exists, and if not then create it
         val folder = File(Environment.getExternalStorageDirectory().path.toString() + "/Recordings")
@@ -303,4 +351,140 @@ class MainActivity : AppCompatActivity() {
     }
 
 
+    /**
+     * Used for sending data over the network
+     *
+     */
+    private fun initUi_PlayerOverUdpProtocol(){
+        Log.d(TAG,"initUi_PlayerOverUdpProtocol()")
+
+        val udptransfer = findViewById<CheckBox>(R.id.udpOnOff)
+        val btn_startRecording = findViewById<Button>(R.id.btn_startRec)
+
+        btn_startRecording.setOnClickListener() {
+
+            if(udptransfer.isChecked){
+                Log.d(TAG,"Attempting to send Data On UDP")
+                Toast.makeText(this, "Recording Started", Toast.LENGTH_SHORT).show()
+
+//                Thread(Runnable { receiveBroadcast() }).start()
+                udpStartRecording()
+
+            }
+            else{
+                Log.d(TAG,"Attempting to receive Data On UDP")
+//                receiveBroadcast()
+
+                Thread(Runnable { receiveBroadcast() }).start()
+            }
+
+        }
+
+
+        val btn_stopRecording = findViewById<Button>(R.id.btn_stopRec)
+        btn_stopRecording.setOnClickListener(){
+            udpSend = false
+            stopTimer()
+            Thread(Runnable { stopRec() }).start()
+            Toast.makeText(this, "Recording Stopped", Toast.LENGTH_SHORT).show()
+        }
+
+    }
+
+    private fun udpStartRecording(){
+        Log.d(TAG,"udpStartRecording")
+
+        startTimer()
+        Thread(Runnable { udpStartRec() }).start()
+
+    }
+
+    private fun sendBroadcast(messageStr: ShortArray) {
+        Log.d(TAG,"sendBroadcast()")
+
+        val ipp = findViewById<EditText>(R.id.ipAdress).text.toString()
+        val ip = InetAddress.getByName(ipp)
+        val port = findViewById<EditText>(R.id.ipPort).text.toString().toInt()
+
+        val policy = ThreadPolicy.Builder().permitAll().build()
+        StrictMode.setThreadPolicy(policy)
+        try {
+            Log.d(TAG,"Attempting to create UDP Packet")
+            val socket = DatagramSocket()
+            val sendData = messageStr.toByteArray()
+
+            val sendPacket =
+                DatagramPacket(sendData, sendData.size, ip, port)
+
+            val s = sendData.size
+            Log.d(TAG, "[ $ReadingDataIndex ] sendData Size : $s")
+
+            socket.send(sendPacket)
+            Log.d(TAG,"Sent UDP Packet @ $ipp")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "IOException: ")
+            e.printStackTrace()
+        }
+    }
+
+    private fun receiveBroadcast() {
+
+        Log.d(TAG,"receiveBroadcast()")
+        val ipp = findViewById<EditText>(R.id.ipAdress).text.toString()
+        val ip = InetAddress.getByName(ipp)
+        val port = findViewById<EditText>(R.id.ipPort).text.toString().toInt()
+
+        val policy = ThreadPolicy.Builder().permitAll().build()
+        StrictMode.setThreadPolicy(policy)
+
+        try {
+            Log.d(TAG,"Try : receiveBroadcast() ")
+            
+            socket.setSoTimeout(1000); //10 sec
+            //create socket with ip and port
+            while (udpSend) {
+
+                Log.i(TAG, "Ready to receive broadcast packets!")
+                val packet = DatagramPacket(ByteDataFromJNI, ByteDataFromJNI.size)
+                
+                socket.receive(packet)
+                Log.i(TAG, "Packet received from : " + packet.address.hostAddress)
+
+                val t = ByteDataFromJNI.size
+                Log.d(TAG, "[ $PlayingDataIndex ] ByteDataFromJNI Size : $t")
+
+                ByteBuffer.wrap(ByteDataFromJNI).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
+                    .get(shortDataFromJNI)
+
+                val s = shortDataFromJNI.size
+                Log.d(TAG, "[ $PlayingDataIndex ] shortDataFromJNI Size : $s")
+                PlayingDataIndex+=1
+
+                Thread(Runnable { udpStartPlaying(shortDataFromJNI) }).start()
+//                udpStartPlaying(shortDataFromJNI)
+
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "IOException: ")
+            e.printStackTrace()
+
+        } catch (e: SocketTimeoutException) {
+            // timeout exception.
+            Log.d(TAG,"Timeout reached!!! $e")
+        }
+        Log.d(TAG,"Stopped : receiveBroadcast() ")
+    }
+
 }
+
+private fun ShortArray.toByteArray(): ByteArray {
+    //convert short array to byte array
+    val bytes = ByteArray(size * 2)
+    for (i in indices) {
+        bytes[i * 2] = (this[i].toInt() and 0xFF).toByte()
+        bytes[i * 2 + 1] = (this[i].toInt() shr 8 and 0xFF).toByte()
+    }
+    return bytes
+}
+

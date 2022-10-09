@@ -32,7 +32,7 @@
 
     <Chronometer
         android:id="@+id/simpleTimer"
-        android:layout_width="230dp"
+        android:layout_width="150dp"
         android:layout_height="52dp"
         android:layout_centerHorizontal="true"
         android:paddingTop="20dp"
@@ -44,5 +44,46 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintVertical_bias="0.039" />
+
+    <CheckBox
+        android:id="@+id/udpOnOff"
+        android:layout_width="120dp"
+        android:layout_height="52dp"
+        android:layout_centerInParent="true"
+        android:text="UDP Send"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.804"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintVertical_bias="0.05" />
+
+    <EditText
+        android:id="@+id/ipAdress"
+        android:layout_width="189dp"
+        android:layout_height="45dp"
+        android:ems="10"
+        android:hint="Enter the IP : 0:0:0:0"
+        android:inputType="textPersonName"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.164"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/btn_startRec"
+        app:layout_constraintVertical_bias="0.083" />
+
+    <EditText
+        android:id="@+id/ipPort"
+        android:layout_width="126dp"
+        android:layout_height="45dp"
+        android:ems="10"
+        android:hint="Port : 0000"
+        android:inputType="textPersonName"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.87"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/btn_stopRec"
+        app:layout_constraintVertical_bias="0.082" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
